@@ -1,4 +1,4 @@
-module github.com/jparr721/simpleMPI
+module github.com/jparr721/goMPI
 
 go 1.18
 
