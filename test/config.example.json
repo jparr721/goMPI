@@ -1,0 +1,5 @@
+{
+    "user": "user",
+    "keyfile": "/home/user/.ssh/id_ed25519",
+    "verbose": "true"
+}
