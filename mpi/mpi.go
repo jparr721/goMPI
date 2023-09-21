@@ -90,8 +90,28 @@ func ParseConfig(ConfigFilePath string) (*config, error) {
 // It takes as input the HostFilePath which is a newline delimited sequence of IP addresses
 // with the host IP first. The format for this file is as follows:
 //
-//	localhost:9998
-//	localhost:9999
+//	{
+//	    "hosts": [
+//	        {
+//	            "address": "host.docker.internal",
+//	            "role": "dispatcher",
+//	            "directory": "/root/simpleMPI",
+//	            "exe_name": "main"
+//	        },
+//	        {
+//	            "address": "localhost",
+//	            "directory": "/root/simpleMPI",
+//	            "exe_name": "main",
+//	            "port": "2022"
+//	        },
+//	        {
+//	            "address": "localhost",
+//	            "directory": "/root/simpleMPI",
+//	            "exe_name": "main",
+//	            "port": "2023"
+//	        }
+//	    ]
+//	}
 //
 // The second paramter allows for the specification of the config file which allows for
 // the configuration of the worker nodes. An example of this configuration can be seen as
@@ -181,10 +201,8 @@ func ReceiveBytes(size uint64, rank uint64) ([]byte, error) {
 			buf[i] = tmpBuf[i-BytesRead]
 		}
 		if errorMsg != nil {
-			if errorMsg.Error() == "EOF" {
-				zap.L().Info("EOF")
-			}
-			zap.L().Info(string(debug.Stack()))
+			zap.L().Error("Error Received: " + errorMsg.Error())
+			zap.L().Error(string(debug.Stack()))
 			return buf, errorMsg
 		}
 		BytesReceived += uint64(n)

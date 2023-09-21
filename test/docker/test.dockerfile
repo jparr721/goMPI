@@ -8,16 +8,16 @@ RUN apt-get update && \
     mkdir /var/run/sshd && \
     mkdir -p /root/.ssh && \
     touch /root/.ssh/authorized_keys && \
-    mkdir -p /root/simpleMPI
+    mkdir -p /root/goMPI
 
 # Set public key
 ARG SSH_PUBLIC_KEY
 RUN echo ${SSH_PUBLIC_KEY} > /root/.ssh/authorized_keys
 
 # Copy project into directory
-COPY . /root/simpleMPI
+COPY . /root/goMPI
 
-WORKDIR /root/simpleMPI
+WORKDIR /root/goMPI
 
 RUN go build test/main.go
 

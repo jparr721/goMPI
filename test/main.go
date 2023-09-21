@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/jparr721/simpleMPI/mpi"
+	"github.com/jparr721/goMPI/mpi"
 )
 
 func main() {

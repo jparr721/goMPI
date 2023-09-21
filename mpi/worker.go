@@ -2,7 +2,6 @@ package mpi
 
 import (
 	"encoding/binary"
-	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -15,19 +14,22 @@ func ConfigureWorker(world *MPIWorld) {
 	dispatcherIP := os.Args[len(os.Args)-3]
 	workerPort := os.Args[len(os.Args)-2]
 
-	zap.L().Info("Connecting to dispatcher node", zap.String("Dispatcher IP", dispatcherIP), zap.String("My Port", workerPort))
+	zap.L().Info("Connecting to dispatcher node",
+		zap.String("Dispatcher IP", dispatcherIP),
+		zap.String("My Port", workerPort),
+	)
 
 	TCPConn, err := net.Dial("tcp", dispatcherIP+":"+workerPort)
 	WorkerToDispatcherTCPConn = &TCPConn
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Info(err.Error())
 		panic("Failed to accept: " + err.Error())
 	}
 	// Receive dispatcher rank
 	buf := make([]byte, 8)
 	_, err = TCPConn.Read(buf)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Info(err.Error())
 		panic("Failed to receive rank: " + err.Error())
 	}
 	SelfRank = binary.LittleEndian.Uint64(buf)
@@ -64,15 +66,15 @@ func ConfigureWorker(world *MPIWorld) {
 	bufSize := make([]byte, 8)
 	_, err = TCPConn.Read(bufSize)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Info(err.Error())
 		panic("Failed to receive buf size: " + err.Error())
 	}
 	buf = make([]byte, binary.LittleEndian.Uint64(bufSize))
-	fmt.Println("Received buf size " + strconv.Itoa(int(binary.LittleEndian.Uint64(bufSize))))
+	zap.L().Info("Received buf size " + strconv.Itoa(int(binary.LittleEndian.Uint64(bufSize))))
 
 	_, err = TCPConn.Read(buf)
 	if err != nil {
-		fmt.Println(err)
+		zap.L().Info(err.Error())
 		panic("Failed to receive world: " + err.Error())
 	}
 	world = DeserializeWorld(buf)
