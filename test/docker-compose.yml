@@ -27,6 +27,15 @@ services:
       mynetwork:
         ipv4_address: 172.20.0.4
 
+  worker3:
+    image: worker
+    restart: always
+    ports:
+      - 2024:22
+    networks:
+      mynetwork:
+        ipv4_address: 172.20.0.5
+
 networks:
   mynetwork:
     driver: bridge

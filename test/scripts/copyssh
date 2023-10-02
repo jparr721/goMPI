@@ -1,0 +1,26 @@
+#!/bin/bash
+
+set -euox pipefail
+
+# SSH server details
+ssh_server="root@localhost"
+
+# Remote file to copy and store
+remote_file="/root/.ssh/id_rsa.pub"
+
+# SSH command to read the remote file
+ssh_command="cat $remote_file"
+
+# Use SSH to execute the command and store the output in a variable
+file_contents=$(ssh -p 2021 "$ssh_server" "$ssh_command")
+
+# Make sure that file_contents is non-empty
+if [[ -z "$file_contents" ]]; then
+    echo "Remote file is empty"
+    exit 1
+fi
+
+# Now, copy the value of file_contents to /root/.ssh/authorized_keys on the host with ports 2022, 2023
+ssh -p 2022 "$ssh_server" "echo $file_contents >> /root/.ssh/authorized_keys"
+ssh -p 2023 "$ssh_server" "echo $file_contents >> /root/.ssh/authorized_keys"
+ssh -p 2024 "$ssh_server" "echo $file_contents >> /root/.ssh/authorized_keys"

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -euox pipefail
+
+# Make sure we are not in the "scripts" directory
+if [[ "$(basename "$(pwd)")" == "scripts" ]]; then
+    echo "Please run this script from the root directory"
+    exit 1
+fi
+
+# Now, run the docker build command
+docker build -f test/docker/test.Dockerfile -t worker --build-arg="SSH_PUBLIC_KEY=$(cat ~/.ssh/id_ed25519.pub)" .
