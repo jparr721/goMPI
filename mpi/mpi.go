@@ -98,20 +98,20 @@ func DeserializeWorld(buf []byte) *MPIWorld {
 }
 
 var (
-	SelfRank              uint64
-	MasterToSlaveTCPConn  []*net.Conn
-	SlaveToMasterTCPConn  *net.Conn
-	MasterToSlaveListener []*net.Listener
-	SlaveOutputs          []bytes.Buffer
-	SlaveOutputsErr       []bytes.Buffer
-	BytesSent             uint64
-	BytesReceived         uint64
-	WorldSize             uint64
+	SelfRank                   uint64
+	DispatcherToWorkerTCPConn  []*net.Conn
+	WorkerToDispatcherTCPConn  *net.Conn
+	DispatcherToWorkerListener []*net.Listener
+	WorkerOutputs              []bytes.Buffer
+	WorkerOutputsErr           []bytes.Buffer
+	BytesSent                  uint64
+	BytesReceived              uint64
+	WorldSize                  uint64
 )
 
 func SetIPPool(filePath string, world *MPIWorld) error {
-	// reading IP from file, the first IP is the master node
-	// the rest are the slave nodes
+	// reading IP from file, the first IP is the dispatcher node
+	// the rest are the worker nodes
 	ipFile, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -154,9 +154,9 @@ func GetLocalIP() ([]string, error) {
 	return result, nil
 }
 
-func checkSlave() bool {
+func checkWorker() bool {
 	LastCommand := os.Args[len(os.Args)-1]
-	return strings.ToLower(LastCommand) == "slave"
+	return strings.ToLower(LastCommand) == "worker"
 }
 
 func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MPIWorld {
@@ -169,29 +169,29 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 	selfIP, _ := GetLocalIP()
 	zap.L().Info(strings.Join(selfIP, ", "))
 
-	isSlave := checkSlave()
+	isWorker := checkWorker()
 
-	//Setup TCP connections master <--> slaves
+	//Setup TCP connections dispatcher <--> workers
 
-	if !isSlave {
+	if !isWorker {
 		err := SetIPPool(IPfilePath, world)
 		if err != nil {
 			zap.L().Info(err.Error())
 			panic(err)
 		}
-		MasterToSlaveTCPConn = make([]*net.Conn, world.size)
-		SlaveOutputs = make([]bytes.Buffer, world.size)
-		SlaveOutputsErr = make([]bytes.Buffer, world.size)
-		MasterToSlaveListener = make([]*net.Listener, world.size)
-		MasterToSlaveTCPConn[0] = nil
+		DispatcherToWorkerTCPConn = make([]*net.Conn, world.size)
+		WorkerOutputs = make([]bytes.Buffer, world.size)
+		WorkerOutputsErr = make([]bytes.Buffer, world.size)
+		DispatcherToWorkerListener = make([]*net.Listener, world.size)
+		DispatcherToWorkerTCPConn[0] = nil
 		selfFileLocation, _ := os.Executable()
 		SelfRank = 0
 		for i := 1; i < int(world.size); i++ {
-			slaveIP := world.IPPool[i]
-			slavePort := world.Port[i]
-			slaveRank := uint64(i)
+			workerIP := world.IPPool[i]
+			workerPort := world.Port[i]
+			workerRank := uint64(i)
 
-			// Start slave process via ssh
+			// Start worker process via ssh
 			key, err := ioutil.ReadFile(SSHKeyFilePath)
 			if err != nil {
 				fmt.Printf("unable to read private key: %v\n", err)
@@ -202,7 +202,7 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 				fmt.Printf("unable to parse private key: %v\n", err)
 				panic("Failed to parse key")
 			}
-			conn, err := ssh.Dial("tcp", slaveIP+":"+strconv.Itoa(int(22)), &ssh.ClientConfig{
+			conn, err := ssh.Dial("tcp", workerIP+":"+strconv.Itoa(int(22)), &ssh.ClientConfig{
 				User: SSHUserName,
 				Auth: []ssh.AuthMethod{
 					ssh.PublicKeys(signer),
@@ -225,13 +225,13 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 				Command += " " + os.Args[j]
 			}
 			Command += " " + world.IPPool[0] + " " + strconv.Itoa(int(world.Port[i]))
-			Command += " Slave"
+			Command += " Worker"
 
 			//run the command async and panic when command return error
 			go func() {
 				defer session.Close()
-				session.Stdout = &SlaveOutputs[i]
-				session.Stderr = &SlaveOutputsErr[i]
+				session.Stdout = &WorkerOutputs[i]
+				session.Stderr = &WorkerOutputsErr[i]
 				err := session.Run(Command)
 
 				if err != nil {
@@ -243,11 +243,11 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 			go func(rank uint64) {
 				// Print the output of the command
 				for {
-					data, _ := SlaveOutputs[rank].ReadString('\n')
+					data, _ := WorkerOutputs[rank].ReadString('\n')
 					if data != "" {
 						zap.L().Info("rank " + strconv.Itoa(int(rank)) + " " + data)
 					}
-					data, _ = SlaveOutputsErr[rank].ReadString('\n')
+					data, _ = WorkerOutputsErr[rank].ReadString('\n')
 					if data != "" {
 						ErrorColor := "\033[1;31m%s\033[0m"
 						fmt.Printf(ErrorColor, "rank "+strconv.Itoa(int(rank))+" ERR "+data)
@@ -256,8 +256,8 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 				}
 			}(uint64(i))
 
-			// Listen to slave
-			listener, err := net.Listen("tcp", ":"+strconv.Itoa(int(slavePort)))
+			// Listen to worker
+			listener, err := net.Listen("tcp", ":"+strconv.Itoa(int(workerPort)))
 			if err != nil {
 				zap.L().Info(err.Error())
 				panic("Failed to listen: " + err.Error())
@@ -265,17 +265,17 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 			// Accept a connection
 			TCPConn, err := listener.Accept()
 
-			MasterToSlaveTCPConn[i] = &TCPConn
-			MasterToSlaveListener[i] = &listener
+			DispatcherToWorkerTCPConn[i] = &TCPConn
+			DispatcherToWorkerListener[i] = &listener
 			if err != nil {
 				zap.L().Info(err.Error())
 				panic("Failed to connect via TCP: " + err.Error())
 			}
-			zap.L().Info("Connected to slave " + strconv.Itoa(i))
+			zap.L().Info("Connected to worker " + strconv.Itoa(i))
 
-			// Send slave rank
+			// Send worker rank
 			buf := make([]byte, 8)
-			binary.LittleEndian.PutUint64(buf, uint64(slaveRank))
+			binary.LittleEndian.PutUint64(buf, uint64(workerRank))
 			_, err = TCPConn.Write(buf)
 			if err != nil {
 				zap.L().Info(err.Error())
@@ -303,7 +303,7 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 					zap.L().Info(err.Error())
 					panic("Failed to send working directory: " + err.Error())
 				}
-				zap.L().Info("Sent working directory to slave " + strconv.Itoa(i))
+				zap.L().Info("Sent working directory to worker " + strconv.Itoa(i))
 			}
 
 			// Sync the world state
@@ -327,16 +327,16 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 
 		}
 	} else {
-		// connect to master
-		masterIP := os.Args[len(os.Args)-3]
-		slavePort := os.Args[len(os.Args)-2]
-		TCPConn, err := net.Dial("tcp", masterIP+":"+slavePort)
-		SlaveToMasterTCPConn = &TCPConn
+		// connect to dispatcher
+		dispatcherIP := os.Args[len(os.Args)-3]
+		workerPort := os.Args[len(os.Args)-2]
+		TCPConn, err := net.Dial("tcp", dispatcherIP+":"+workerPort)
+		WorkerToDispatcherTCPConn = &TCPConn
 		if err != nil {
 			zap.L().Info(err.Error())
 			panic("Failed to accept: " + err.Error())
 		}
-		// Receive master rank
+		// Receive dispatcher rank
 		buf := make([]byte, 8)
 		_, err = TCPConn.Read(buf)
 		if err != nil {
@@ -393,8 +393,8 @@ func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MP
 	return world
 }
 
-// If Master calls this function, rank is required
-// If Slave calls this function, rank is not required, it will send to Master
+// If Dispatcher calls this function, rank is required
+// If Worker calls this function, rank is not required, it will send to Dispatcher
 var sentBytes []byte
 var recvBytes []byte
 
@@ -406,9 +406,9 @@ func SendBytes(buf []byte, rank uint64) error {
 	for len(buf) > 0 {
 		n := 0
 		if SelfRank == 0 {
-			n, errorMsg = (*MasterToSlaveTCPConn[rank]).Write(buf)
+			n, errorMsg = (*DispatcherToWorkerTCPConn[rank]).Write(buf)
 		} else {
-			n, errorMsg = (*SlaveToMasterTCPConn).Write(buf)
+			n, errorMsg = (*WorkerToDispatcherTCPConn).Write(buf)
 		}
 		if errorMsg != nil {
 			zap.L().Info(string(debug.Stack()))
@@ -421,8 +421,8 @@ func SendBytes(buf []byte, rank uint64) error {
 	return errorMsg
 }
 
-// If Master calls this function, rank is required, it will receive from rank-th slave
-// If Slave calls this function, rank is not required, it will receive from Master
+// If Dispatcher calls this function, rank is required, it will receive from rank-th worker
+// If Worker calls this function, rank is not required, it will receive from Dispatcher
 func ReceiveBytes(size uint64, rank uint64) ([]byte, error) {
 	buf := make([]byte, size)
 	var errorMsg error
@@ -432,11 +432,11 @@ func ReceiveBytes(size uint64, rank uint64) ([]byte, error) {
 		n := 0
 		tmpBuf := make([]byte, size-BytesRead)
 		if SelfRank == 0 {
-			(*MasterToSlaveTCPConn[rank]).SetReadDeadline(time.Now().Add(10 * time.Second))
-			n, errorMsg = (*MasterToSlaveTCPConn[rank]).Read(tmpBuf)
+			(*DispatcherToWorkerTCPConn[rank]).SetReadDeadline(time.Now().Add(10 * time.Second))
+			n, errorMsg = (*DispatcherToWorkerTCPConn[rank]).Read(tmpBuf)
 		} else {
-			(*SlaveToMasterTCPConn).SetReadDeadline(time.Now().Add(10 * time.Second))
-			n, errorMsg = (*SlaveToMasterTCPConn).Read(tmpBuf)
+			(*WorkerToDispatcherTCPConn).SetReadDeadline(time.Now().Add(10 * time.Second))
+			n, errorMsg = (*WorkerToDispatcherTCPConn).Read(tmpBuf)
 		}
 		for i := BytesRead; i < BytesRead+uint64(n); i++ {
 			buf[i] = tmpBuf[i-BytesRead]
@@ -469,11 +469,11 @@ func Close() {
 	zap.L().Info("Received hash: " + fmt.Sprintf("%x", md5.Sum(recvBytes)))
 	if SelfRank == 0 {
 		time.Sleep(1 * time.Second)
-		for i := 1; i < len(MasterToSlaveTCPConn); i++ {
-			(*MasterToSlaveTCPConn[i]).Close()
-			(*MasterToSlaveListener[i]).Close()
+		for i := 1; i < len(DispatcherToWorkerTCPConn); i++ {
+			(*DispatcherToWorkerTCPConn[i]).Close()
+			(*DispatcherToWorkerListener[i]).Close()
 		}
 	} else {
-		(*SlaveToMasterTCPConn).Close()
+		(*WorkerToDispatcherTCPConn).Close()
 	}
 }
