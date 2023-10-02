@@ -8,10 +8,12 @@ WORKDIR /root
 RUN mkdir -p /root/.ssh && ssh-keygen -t rsa -b 4096 -N "" -f /root/.ssh/id_rsa
 
 # Copy the entire project into the container
-COPY test ./test
+COPY . .
+
+WORKDIR /root/test
 
 # Build executable for the tests
-RUN go build /root/test
+RUN go build
 
 # Stage 2: Create the final image
 FROM golang:1.20
@@ -30,8 +32,8 @@ RUN echo ${SSH_PUBLIC_KEY} > /root/.ssh/authorized_keys
 RUN echo $(cat /root/.ssh/id_rsa.pub) >> /root/.ssh/authorized_keys
 
 # Copy the built executables from the builder stage
-COPY --from=builder /root/goMPI/test /root/goMPI/test
-COPY --from=builder /root/goMPI/test /root/goMPI/test
+COPY --from=builder /root/test /root/test
+COPY --from=builder /root/test /root/test
 
 # Copy the SSH key from the builder stage
 COPY --from=builder /root/.ssh /root/.ssh

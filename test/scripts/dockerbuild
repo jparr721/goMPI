@@ -9,4 +9,4 @@ if [[ "$(basename "$(pwd)")" == "scripts" ]]; then
 fi
 
 # Now, run the docker build command
-docker build -f test/docker/test.Dockerfile -t worker --build-arg="SSH_PUBLIC_KEY=$(cat ~/.ssh/id_ed25519.pub)" .
+docker build -f test/docker/test.Dockerfile -t worker --build-arg="SSH_PUBLIC_KEY=$(cat ~/.ssh/id_ed25519.pub)" --progress=plain .

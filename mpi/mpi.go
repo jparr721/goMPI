@@ -6,6 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"runtime/debug"
@@ -119,26 +120,13 @@ func SetIPPool(filePath string, world *MPIWorld) error {
 	scanner := bufio.NewScanner(ipFile)
 	for scanner.Scan() {
 		line := scanner.Text()
-		//IP and hostname are separated by a space
-
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		if len(line) == 0 {
-			continue
-		}
-		hostname := strings.Split(line, " ")[1]
-		//if hostname doesn't start with "node" we skip
-		if !(hostname[:4] == "node" || (len(hostname) >= 6 && hostname[:6] == "master")) {
-			continue
-		}
-
-		world.IPPool = append(world.IPPool, strings.Split(line, " ")[0])
-
+		//port and IP are separated by a :
+		world.IPPool = append(world.IPPool, strings.Split(line, ":")[0])
+		portNum, err := strconv.Atoi(strings.Split(line, ":")[1])
 		if err != nil {
 			return err
 		}
-		// get a random port number betwee 10000 and 20000
+		world.Port = append(world.Port, uint64(portNum))
 		world.rank = append(world.rank, world.size)
 		world.size++
 	}
@@ -171,45 +159,7 @@ func checkSlave() bool {
 	return strings.ToLower(LastCommand) == "slave"
 }
 
-type config struct {
-	User    string
-	KeyFile string
-	Verbose bool
-}
-
-func ParseConfig(ConfigFilePath string) config {
-	// parse the config file
-	// format: user, keyfile, verbose
-	// user: string
-	// keyfile: string
-	// verbose: bool
-	config := config{}
-	configFile, err := os.Open(ConfigFilePath)
-	if err != nil {
-		panic(err)
-	}
-	defer configFile.Close()
-	scanner := bufio.NewScanner(configFile)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "user") {
-			config.User = strings.Split(line, " ")[1]
-		} else if strings.HasPrefix(line, "keyfile") {
-			config.KeyFile = strings.Split(line, " ")[1]
-		} else if strings.HasPrefix(line, "verbose") {
-			config.Verbose, err = strconv.ParseBool(strings.Split(line, " ")[1])
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-	return config
-}
-
-func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
+func WorldInit(IPfilePath string, SSHKeyFilePath string, SSHUserName string) *MPIWorld {
 	world := new(MPIWorld)
 	world.size = 0
 	world.rank = make([]uint64, 0)
@@ -224,9 +174,7 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 	//Setup TCP connections master <--> slaves
 
 	if !isSlave {
-		configuration := ParseConfig(ConfigFilePath)
-		err := SetIPPool(HostFilePath, world)
-		world.Port = make([]uint64, world.size)
+		err := SetIPPool(IPfilePath, world)
 		if err != nil {
 			zap.L().Info(err.Error())
 			panic(err)
@@ -240,11 +188,11 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 		SelfRank = 0
 		for i := 1; i < int(world.size); i++ {
 			slaveIP := world.IPPool[i]
+			slavePort := world.Port[i]
 			slaveRank := uint64(i)
 
 			// Start slave process via ssh
-			zap.L().Info(configuration.KeyFile)
-			key, err := os.ReadFile(configuration.KeyFile)
+			key, err := ioutil.ReadFile(SSHKeyFilePath)
 			if err != nil {
 				fmt.Printf("unable to read private key: %v\n", err)
 				panic("Failed to load key")
@@ -254,9 +202,8 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 				fmt.Printf("unable to parse private key: %v\n", err)
 				panic("Failed to parse key")
 			}
-			zap.L().Info(slaveIP)
 			conn, err := ssh.Dial("tcp", slaveIP+":"+strconv.Itoa(int(22)), &ssh.ClientConfig{
-				User: configuration.User,
+				User: SSHUserName,
 				Auth: []ssh.AuthMethod{
 					ssh.PublicKeys(signer),
 				},
@@ -266,16 +213,6 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 			if err != nil {
 				zap.L().Info(err.Error())
 				panic("Failed to dial: " + err.Error())
-			}
-
-			// Listen to slave
-
-			listener, err := net.Listen("tcp", ":0")
-			world.Port[i] = uint64(listener.Addr().(*net.TCPAddr).Port)
-			zap.L().Info("Slave " + strconv.Itoa(i) + " Listening on port: " + strconv.Itoa(int(world.Port[i])))
-			if err != nil {
-				zap.L().Info(err.Error())
-				panic("Failed to listen: " + err.Error())
 			}
 
 			session, err := conn.NewSession()
@@ -289,45 +226,42 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 			}
 			Command += " " + world.IPPool[0] + " " + strconv.Itoa(int(world.Port[i]))
 			Command += " Slave"
-			stdOutRedirected := make(chan struct{}, 1)
+
 			//run the command async and panic when command return error
 			go func() {
 				defer session.Close()
 				session.Stdout = &SlaveOutputs[i]
 				session.Stderr = &SlaveOutputsErr[i]
-				close(stdOutRedirected)
 				err := session.Run(Command)
 
 				if err != nil {
 					zap.L().Info(err.Error())
+					panic(err)
 				}
 			}()
 
 			go func(rank uint64) {
 				// Print the output of the command
-				<-stdOutRedirected
 				for {
-					func() {
-						defer func() {
-							if r := recover(); r != nil {
-								zap.L().Info("Output err at rank", rank)
-							}
-							time.Sleep(1 * time.Second)
-						}()
-						data, _ := SlaveOutputs[rank].ReadString('\n')
-						if data != "" && configuration.Verbose {
-							zap.L().Info("rank " + strconv.Itoa(int(rank)) + " " + data)
-						}
-						data, _ = SlaveOutputsErr[rank].ReadString('\n')
-						if data != "" {
-							ErrorColor := "\033[1;31m%s\033[0m"
-							fmt.Printf(ErrorColor, "rank "+strconv.Itoa(int(rank))+" ERR "+data)
-						}
-						time.Sleep(1 * time.Microsecond)
-					}()
+					data, _ := SlaveOutputs[rank].ReadString('\n')
+					if data != "" {
+						zap.L().Info("rank " + strconv.Itoa(int(rank)) + " " + data)
+					}
+					data, _ = SlaveOutputsErr[rank].ReadString('\n')
+					if data != "" {
+						ErrorColor := "\033[1;31m%s\033[0m"
+						fmt.Printf(ErrorColor, "rank "+strconv.Itoa(int(rank))+" ERR "+data)
+					}
+					time.Sleep(1 * time.Microsecond)
 				}
 			}(uint64(i))
 
+			// Listen to slave
+			listener, err := net.Listen("tcp", ":"+strconv.Itoa(int(slavePort)))
+			if err != nil {
+				zap.L().Info(err.Error())
+				panic("Failed to listen: " + err.Error())
+			}
 			// Accept a connection
 			TCPConn, err := listener.Accept()
 
@@ -410,7 +344,6 @@ func WorldInit(HostFilePath string, ConfigFilePath string) *MPIWorld {
 			panic("Failed to receive rank: " + err.Error())
 		}
 		SelfRank = binary.LittleEndian.Uint64(buf)
-
 		// Receive the working directory
 		{
 			//Receive string length
@@ -499,10 +432,10 @@ func ReceiveBytes(size uint64, rank uint64) ([]byte, error) {
 		n := 0
 		tmpBuf := make([]byte, size-BytesRead)
 		if SelfRank == 0 {
-			(*MasterToSlaveTCPConn[rank]).SetReadDeadline(time.Now().Add(1000 * time.Second))
+			(*MasterToSlaveTCPConn[rank]).SetReadDeadline(time.Now().Add(10 * time.Second))
 			n, errorMsg = (*MasterToSlaveTCPConn[rank]).Read(tmpBuf)
 		} else {
-			(*SlaveToMasterTCPConn).SetReadDeadline(time.Now().Add(1000 * time.Second))
+			(*SlaveToMasterTCPConn).SetReadDeadline(time.Now().Add(10 * time.Second))
 			n, errorMsg = (*SlaveToMasterTCPConn).Read(tmpBuf)
 		}
 		for i := BytesRead; i < BytesRead+uint64(n); i++ {
