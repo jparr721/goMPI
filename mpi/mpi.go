@@ -88,15 +88,21 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 	world.IPPool = make([]string, 0)
 	world.Port = make([]uint64, 0)
 
+	// Initialize the worker pool
+	err := SetIPPool(IPfilePath, world)
+	if err != nil {
+		zap.L().Error(err.Error())
+		panic("Failed to initialize worker pool " + err.Error())
+	}
+
 	selfIP, _ := GetLocalIP()
 	zap.L().Info(strings.Join(selfIP, ", "))
 
 	isWorker := isNodeWorker()
 
-	//Setup TCP connections dispatcher <--> workers
-
+	// Setup TCP connections dispatcher <--> workers
 	if !isWorker {
-		initDispatcher(IPfilePath, SSHKeyFilePath, SSHUserName, world)
+		initDispatcher(SSHKeyFilePath, SSHUserName, world)
 	} else {
 		// Golang is stupid.
 		var err error
@@ -109,6 +115,7 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 			panic(err.Error())
 		}
 	}
+
 	WorldSize = world.size
 	return world
 }

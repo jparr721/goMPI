@@ -12,12 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func initDispatcher(IPfilePath, SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
-	err := SetIPPool(IPfilePath, world)
-	if err != nil {
-		zap.L().Error(err.Error())
-		return err
-	}
+func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 	DispatcherToWorkerTCPConn = make([]*net.Conn, world.size)
 	WorkerOutputs = make([]bytes.Buffer, world.size)
 	WorkerOutputsErr = make([]bytes.Buffer, world.size)
@@ -66,7 +61,7 @@ func initDispatcher(IPfilePath, SSHKeyFilePath, SSHUserName string, world *MPIWo
 		Command += " " + world.IPPool[0] + " " + strconv.Itoa(int(world.Port[i]))
 		Command += " Worker"
 
-		//run the command async and zap.L().Error when command return error
+		// run the command async and zap.L().Error when command return error
 		go func() {
 			defer session.Close()
 			session.Stdout = &WorkerOutputs[i]
@@ -146,7 +141,7 @@ func initDispatcher(IPfilePath, SSHKeyFilePath, SSHUserName string, world *MPIWo
 		// Sync the world state
 		buf = SerializeWorld(world)
 
-		//Send buf size
+		// Send buf size
 		bufSize := make([]byte, 8)
 		binary.LittleEndian.PutUint64(bufSize, uint64(len(buf)))
 		_, err = TCPConn.Write(bufSize)
@@ -155,7 +150,7 @@ func initDispatcher(IPfilePath, SSHKeyFilePath, SSHUserName string, world *MPIWo
 			return err
 		}
 
-		//Send buf
+		// Send buf
 		_, err = TCPConn.Write(buf)
 		if err != nil {
 			zap.L().Error("Failed to send world: " + err.Error())
