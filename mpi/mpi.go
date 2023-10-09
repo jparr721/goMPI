@@ -120,11 +120,11 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 	return world
 }
 
-// If Dispatcher calls this function, rank is required
-// If Worker calls this function, rank is not required, it will send to Dispatcher
 var sentBytes []byte
 var recvBytes []byte
 
+// If Dispatcher calls this function, rank is required
+// If Worker calls this function, rank is not required, it will send to Dispatcher
 func SendBytes(buf []byte, rank uint64) error {
 	var errorMsg error
 	errorMsg = nil
