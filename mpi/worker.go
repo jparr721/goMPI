@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -14,6 +15,8 @@ func initWorker() (*MPIWorld, error) {
 	dispatcherIP := os.Args[len(os.Args)-3]
 	workerPort := os.Args[len(os.Args)-2]
 	TCPConn, err := net.Dial("tcp", dispatcherIP+":"+workerPort)
+	// Make sure there is no deadline for timeouts
+	TCPConn.SetDeadline(time.Time{})
 	WorkerToDispatcherTCPConn = &TCPConn
 	if err != nil {
 		zap.L().Error("Failed to accept: " + err.Error())

@@ -97,6 +97,9 @@ func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 		// Accept a connection
 		TCPConn, err := listener.Accept()
 
+		// Make sure there is no deadline for timeouts
+		TCPConn.SetDeadline(time.Time{})
+
 		DispatcherToWorkerTCPConn[i] = &TCPConn
 		DispatcherToWorkerListener[i] = &listener
 		if err != nil {
