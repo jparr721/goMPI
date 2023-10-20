@@ -38,6 +38,7 @@ func initWorker() (*MPIWorld, error) {
 		buf = make([]byte, 8)
 		_, err = TCPConn.Read(buf)
 		if err != nil {
+			zap.L().Error("Failed to receive working directory length: " + err.Error())
 			return nil, err
 		}
 		workingDirLength := binary.LittleEndian.Uint64(buf)

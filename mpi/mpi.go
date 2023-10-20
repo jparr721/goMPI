@@ -36,6 +36,7 @@ func SetIPPool(filePath string, world *MPIWorld) error {
 	// the rest are the worker nodes
 	ipFile, err := os.Open(filePath)
 	if err != nil {
+		zap.L().Error("Failed to open IP file: " + err.Error())
 		return err
 	}
 	defer ipFile.Close()
@@ -46,6 +47,7 @@ func SetIPPool(filePath string, world *MPIWorld) error {
 		world.IPPool = append(world.IPPool, strings.Split(line, ":")[0])
 		portNum, err := strconv.Atoi(strings.Split(line, ":")[1])
 		if err != nil {
+			zap.L().Error("Failed to parse port number: " + err.Error())
 			return err
 		}
 		world.Port = append(world.Port, uint64(portNum))
@@ -53,6 +55,7 @@ func SetIPPool(filePath string, world *MPIWorld) error {
 		world.size++
 	}
 	if err := scanner.Err(); err != nil {
+		zap.L().Error("Failed to read IP file: " + err.Error())
 		return err
 	}
 	return nil
@@ -63,6 +66,7 @@ func GetLocalIP() ([]string, error) {
 	addrs, err := net.InterfaceAddrs()
 	result := make([]string, 0)
 	if err != nil {
+		zap.L().Error("Failed to get local IP address: " + err.Error())
 		return result, err
 	}
 	for _, address := range addrs {

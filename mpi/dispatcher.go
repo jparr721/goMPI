@@ -69,7 +69,7 @@ func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 			err := session.Run(Command)
 
 			if err != nil {
-				zap.L().Error(err.Error())
+				zap.L().Error("Command Run Error: " + err.Error())
 			}
 		}()
 
