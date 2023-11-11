@@ -181,6 +181,10 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 		panic("Failed to initialize worker pool from kubernetes " + err.Error())
 	}
 
+	if world.size == 0 {
+		panic("No world nodes found, exiting")
+	}
+
 	selfIP, _ := GetLocalIP()
 	zap.L().Info(strings.Join(selfIP, ", "))
 
