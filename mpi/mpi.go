@@ -3,6 +3,7 @@ package mpi
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/md5"
 	"fmt"
 	"net"
@@ -13,6 +14,9 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 func init() {
@@ -31,7 +35,7 @@ var (
 	WorldSize                  uint64
 )
 
-func SetIPPool(filePath string, world *MPIWorld) error {
+func SetIPPoolFromFile(filePath string, world *MPIWorld) error {
 	// reading IP from file, the first IP is the dispatcher node
 	// the rest are the worker nodes
 	ipFile, err := os.Open(filePath)
@@ -58,6 +62,70 @@ func SetIPPool(filePath string, world *MPIWorld) error {
 		zap.L().Error("Failed to read IP file: " + err.Error())
 		return err
 	}
+	return nil
+}
+
+// SetIPPoolFromKubernetes dynamically constructs the pool of IP addresses
+// for the MPI world by querying the Kubernetes cluster for pods that match
+// specific criteria. It utilizes the in-cluster configuration to create a
+// clientset, which is then used to access the Kubernetes API and list pods
+// based on a specified label selector. This function iterates over the list
+// of worker pods, extracting their IP addresses and adding them to the world's
+// IPPool. It is designed to run from within a pod inside a Kubernetes cluster.
+// The function assumes that the pod has the necessary permissions to list
+// pods in the Kubernetes API.
+//
+// Parameters:
+//
+//	world - A pointer to the MPIWorld structure where the pool of IP addresses
+//	        will be stored.
+//
+// Returns:
+//
+//	error - Any error encountered while setting up the IPPool from Kubernetes.
+//	        Returns nil if the operation is successful.
+//
+// Example Usage:
+//
+//	var myWorld MPIWorld
+//	err := SetIPPoolFromKubernetes(&myWorld)
+//	if err != nil {
+//	    // handle error
+//	}
+func SetIPPoolFromKubernetes(world *MPIWorld) error {
+	// Creates the in-cluster config from the service account in the deployment.
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		zap.L().Error("Failed to create in-cluster config: " + err.Error())
+		return err
+	}
+
+	// Now, take the config and make the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		zap.L().Error("Failed to create clientset: " + err.Error())
+		return err
+	}
+
+	// Get the pods in the current namespace
+	pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "app=krania-gnark,component=worker",
+	})
+	if err != nil {
+		zap.L().Error("Failed to list pods: " + err.Error())
+		return err
+	}
+
+	// Static port allocation
+	port := 8000
+
+	for _, pod := range pods.Items {
+		world.IPPool = append(world.IPPool, pod.Status.PodIP)
+		world.Port = append(world.Port, uint64(port))
+		world.rank = append(world.rank, world.size)
+		world.size++
+	}
+
 	return nil
 }
 
@@ -92,11 +160,22 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 	world.IPPool = make([]string, 0)
 	world.Port = make([]uint64, 0)
 
-	// Initialize the worker pool
-	err := SetIPPool(IPfilePath, world)
+	// Initialize the worker pool. First, try from kubernetes
+	err := SetIPPoolFromKubernetes(world)
 	if err != nil {
-		zap.L().Error(err.Error())
-		panic("Failed to initialize worker pool " + err.Error())
+		// If we are not running within kubernetes, default to the ip.txt file.
+		if err == rest.ErrNotInCluster {
+			err := SetIPPoolFromFile(IPfilePath, world)
+
+			// If something else breaks, die
+			if err != nil {
+				zap.L().Error(err.Error())
+				panic("Failed to initialize worker pool from ip.txt" + err.Error())
+			}
+		}
+
+		// Otherwise, die when k8s crashes us.
+		panic("Failed to initialize worker pool from kubernetes " + err.Error())
 	}
 
 	selfIP, _ := GetLocalIP()
