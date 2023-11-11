@@ -93,6 +93,7 @@ func SetIPPoolFromFile(filePath string, world *MPIWorld) error {
 //	    // handle error
 //	}
 func SetIPPoolFromKubernetes(world *MPIWorld) error {
+	zap.L().Info("Attempting to load kubernetes configuration")
 	// Creates the in-cluster config from the service account in the deployment.
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -120,6 +121,7 @@ func SetIPPoolFromKubernetes(world *MPIWorld) error {
 	port := 8000
 
 	for _, pod := range pods.Items {
+		zap.L().Info("Loading pod: " + pod.Status.PodIP)
 		world.IPPool = append(world.IPPool, pod.Status.PodIP)
 		world.Port = append(world.Port, uint64(port))
 		world.rank = append(world.rank, world.size)
@@ -165,6 +167,7 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 	if err != nil {
 		// If we are not running within kubernetes, default to the ip.txt file.
 		if err == rest.ErrNotInCluster {
+			zap.L().Info("Failed to detect kuberenetes environment, defaulting to ip.txt")
 			err := SetIPPoolFromFile(IPfilePath, world)
 
 			// If something else breaks, die
