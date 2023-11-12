@@ -174,19 +174,14 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 		err := SetIPPoolFromKubernetes(world)
 		if err != nil {
 			// If we are not running within kubernetes, default to the ip.txt file.
-			if err == rest.ErrNotInCluster {
-				zap.L().Info("Failed to detect kuberenetes environment, defaulting to ip.txt")
-				err := SetIPPoolFromFile(IPfilePath, world)
+			zap.L().Info("Failed to detect kuberenetes environment, defaulting to ip.txt")
+			err := SetIPPoolFromFile(IPfilePath, world)
 
-				// If something else breaks, die
-				if err != nil {
-					zap.L().Error(err.Error())
-					panic("Failed to initialize worker pool from ip.txt" + err.Error())
-				}
+			// If something else breaks, die
+			if err != nil {
+				zap.L().Error(err.Error())
+				panic("Failed to initialize worker pool from ip.txt" + err.Error())
 			}
-
-			// Otherwise, die when k8s crashes us.
-			panic("Failed to initialize worker pool from kubernetes " + err.Error())
 		}
 
 		if world.size == 0 {
