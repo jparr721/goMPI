@@ -162,49 +162,50 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 	world.IPPool = make([]string, 0)
 	world.Port = make([]uint64, 0)
 
-	// Initialize the worker pool. First, try from kubernetes
-	err := SetIPPoolFromKubernetes(world)
-	if err != nil {
-		// If we are not running within kubernetes, default to the ip.txt file.
-		if err == rest.ErrNotInCluster {
-			zap.L().Info("Failed to detect kuberenetes environment, defaulting to ip.txt")
-			err := SetIPPoolFromFile(IPfilePath, world)
-
-			// If something else breaks, die
-			if err != nil {
-				zap.L().Error(err.Error())
-				panic("Failed to initialize worker pool from ip.txt" + err.Error())
-			}
-		}
-
-		// Otherwise, die when k8s crashes us.
-		panic("Failed to initialize worker pool from kubernetes " + err.Error())
-	}
-
-	if world.size == 0 {
-		panic("No world nodes found, exiting")
-	}
+	isWorker := isNodeWorker()
 
 	selfIP, _ := GetLocalIP()
 	zap.L().Info(strings.Join(selfIP, ", "))
 
-	isWorker := isNodeWorker()
-
-	if isWorker {
-		zap.L().Info("Node type: Worker")
-	} else {
-		zap.L().Info("Node type: Dispatcher")
-	}
-
 	// Setup TCP connections dispatcher <--> workers
 	if !isWorker {
+		// Worker pool is initialized and passed down as the serialized world state, so we only need this info once.
+		// Initialize the worker pool. First, try from kubernetes
+		err := SetIPPoolFromKubernetes(world)
+		if err != nil {
+			// If we are not running within kubernetes, default to the ip.txt file.
+			if err == rest.ErrNotInCluster {
+				zap.L().Info("Failed to detect kuberenetes environment, defaulting to ip.txt")
+				err := SetIPPoolFromFile(IPfilePath, world)
+
+				// If something else breaks, die
+				if err != nil {
+					zap.L().Error(err.Error())
+					panic("Failed to initialize worker pool from ip.txt" + err.Error())
+				}
+			}
+
+			// Otherwise, die when k8s crashes us.
+			panic("Failed to initialize worker pool from kubernetes " + err.Error())
+		}
+
+		if world.size == 0 {
+			panic("No world nodes found, exiting")
+		}
+
+		zap.L().Info("Node type: Dispatcher")
 		initDispatcher(SSHKeyFilePath, SSHUserName, world)
 	} else {
+		zap.L().Info("Node type: Worker")
 		// Golang is stupid.
 		var err error
 
 		// Call initWorker and overwrite the world state
 		world, err = initWorker()
+
+		if world.size == 0 {
+			panic("world sent invalid state")
+		}
 
 		// Melt down on error
 		if err != nil {
