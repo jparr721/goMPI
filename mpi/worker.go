@@ -15,13 +15,16 @@ func initWorker() (*MPIWorld, error) {
 	dispatcherIP := os.Args[len(os.Args)-3]
 	workerPort := os.Args[len(os.Args)-2]
 	TCPConn, err := net.Dial("tcp", dispatcherIP+":"+workerPort)
-	// Make sure there is no deadline for timeouts
-	TCPConn.SetDeadline(time.Time{})
-	WorkerToDispatcherTCPConn = &TCPConn
 	if err != nil {
 		zap.L().Error("Failed to accept: " + err.Error())
 		return nil, err
 	}
+
+	// Make sure there is no deadline for timeouts
+	TCPConn.SetDeadline(time.Time{})
+
+	WorkerToDispatcherTCPConn = &TCPConn
+	zap.L().Info("Worker accepted TCP connection")
 
 	// Receive dispatcher rank
 	buf := make([]byte, 8)
@@ -32,6 +35,7 @@ func initWorker() (*MPIWorld, error) {
 	}
 
 	SelfRank = binary.LittleEndian.Uint64(buf)
+	zap.L().Info("Worker rank " + strconv.Itoa(int(SelfRank)) + " starting work")
 	// Receive the working directory
 	{
 		//Receive string length
@@ -42,6 +46,7 @@ func initWorker() (*MPIWorld, error) {
 			return nil, err
 		}
 		workingDirLength := binary.LittleEndian.Uint64(buf)
+
 		//Receive string
 		buf = make([]byte, workingDirLength)
 		_, err = TCPConn.Read(buf)
@@ -50,6 +55,8 @@ func initWorker() (*MPIWorld, error) {
 			return nil, err
 		}
 		workingDir := string(buf)
+		zap.L().Info("Received working dir " + workingDir)
+
 		err = os.Chdir(workingDir)
 		if err != nil {
 			zap.L().Error("Failed to change working directory: " + err.Error())

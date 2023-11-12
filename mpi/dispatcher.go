@@ -61,6 +61,8 @@ func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 		Command += " " + world.IPPool[0] + " " + strconv.Itoa(int(world.Port[i]))
 		Command += " Worker"
 
+		zap.L().Info("dispatcher sending command to worker " + Command)
+
 		// run the command async and zap.L().Error when command return error
 		go func() {
 			defer session.Close()
