@@ -190,6 +190,12 @@ func WorldInit(IPfilePath, SSHKeyFilePath, SSHUserName string) *MPIWorld {
 
 	isWorker := isNodeWorker()
 
+	if isWorker {
+		zap.L().Info("Node type: Worker")
+	} else {
+		zap.L().Info("Node type: Dispatcher")
+	}
+
 	// Setup TCP connections dispatcher <--> workers
 	if !isWorker {
 		initDispatcher(SSHKeyFilePath, SSHUserName, world)
@@ -249,10 +255,10 @@ func ReceiveBytes(size uint64, rank uint64) ([]byte, error) {
 		n := 0
 		tmpBuf := make([]byte, size-BytesRead)
 		if SelfRank == 0 {
-			(*DispatcherToWorkerTCPConn[rank]).SetReadDeadline(time.Now().Add(10 * time.Second))
+			(*DispatcherToWorkerTCPConn[rank]).SetReadDeadline(time.Now().Add(30 * time.Second))
 			n, errorMsg = (*DispatcherToWorkerTCPConn[rank]).Read(tmpBuf)
 		} else {
-			(*WorkerToDispatcherTCPConn).SetReadDeadline(time.Now().Add(10 * time.Second))
+			(*WorkerToDispatcherTCPConn).SetReadDeadline(time.Now().Add(30 * time.Second))
 			n, errorMsg = (*WorkerToDispatcherTCPConn).Read(tmpBuf)
 		}
 		for i := BytesRead; i < BytesRead+uint64(n); i++ {
