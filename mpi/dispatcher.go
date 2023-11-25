@@ -3,6 +3,7 @@ package mpi
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -24,6 +25,7 @@ func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 		workerIP := world.IPPool[i]
 		workerPort := world.Port[i]
 		workerRank := uint64(i)
+		fmt.Println("WORKER RANK", workerRank)
 
 		// Start worker process via ssh
 		key, err := os.ReadFile(SSHKeyFilePath)
@@ -60,6 +62,7 @@ func initDispatcher(SSHKeyFilePath, SSHUserName string, world *MPIWorld) error {
 		}
 		Command += " " + world.IPPool[0] + " " + strconv.Itoa(int(world.Port[i]))
 		Command += " Worker"
+		fmt.Println("SENDING COMMAND", Command)
 
 		zap.L().Info("dispatcher sending command to worker " + Command)
 
