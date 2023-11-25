@@ -2,6 +2,7 @@ package mpi
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -34,6 +35,9 @@ func initWorker() (*MPIWorld, error) {
 		return nil, err
 	}
 
+	fmt.Println("Received rank LE " + strconv.Itoa(int(binary.LittleEndian.Uint64(buf))))
+	fmt.Println("Received rank BE " + strconv.Itoa(int(binary.BigEndian.Uint64(buf))))
+
 	SelfRank = binary.LittleEndian.Uint64(buf)
 	zap.L().Info("Worker rank " + strconv.Itoa(int(SelfRank)) + " starting work")
 	// Receive the working directory
@@ -45,6 +49,10 @@ func initWorker() (*MPIWorld, error) {
 			zap.L().Error("Failed to receive working directory length: " + err.Error())
 			return nil, err
 		}
+
+		fmt.Println("Received workingDirLength LE " + strconv.Itoa(int(binary.LittleEndian.Uint64(buf))))
+		fmt.Println("Received workingDirLength BE " + strconv.Itoa(int(binary.BigEndian.Uint64(buf))))
+
 		workingDirLength := binary.LittleEndian.Uint64(buf)
 
 		//Receive string
@@ -56,6 +64,7 @@ func initWorker() (*MPIWorld, error) {
 		}
 		workingDir := string(buf)
 		zap.L().Info("Received working dir " + workingDir)
+		fmt.Println("Received working dir " + workingDir)
 
 		err = os.Chdir(workingDir)
 		if err != nil {
@@ -64,6 +73,7 @@ func initWorker() (*MPIWorld, error) {
 		}
 		workingDir, _ = os.Getwd()
 		zap.L().Info("Changed working directory to " + workingDir)
+		fmt.Println("Changed working directory to " + workingDir)
 	}
 
 	// Sync the world state

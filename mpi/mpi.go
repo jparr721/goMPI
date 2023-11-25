@@ -55,6 +55,9 @@ func SetIPPoolFromFile(filePath string, world *MPIWorld) error {
 			return err
 		}
 		world.Port = append(world.Port, uint64(portNum))
+
+		fmt.Println("Rank " + strconv.Itoa(int(world.size)) + " IP " + world.IPPool[len(world.IPPool)-1] + " Port " + strconv.Itoa(int(world.Port[len(world.Port)-1])))
+
 		world.rank = append(world.rank, world.size)
 		world.size++
 	}
