@@ -35,6 +35,24 @@ var (
 	WorldSize                  uint64
 )
 
+func ReadIpTxt(filePath string) ([]string, error) {
+	ipFile, err := os.Open(filePath)
+	if err != nil {
+		zap.L().Error("Failed to open IP file: " + err.Error())
+		return nil, err
+	}
+	defer ipFile.Close()
+	ips := make([]string, 0)
+	scanner := bufio.NewScanner(ipFile)
+	for scanner.Scan() {
+		line := scanner.Text()
+		//port and IP are separated by a :
+		ips = append(ips, strings.Split(line, ":")[0])
+	}
+
+	return ips, nil
+}
+
 func SetIPPoolFromFile(filePath string, world *MPIWorld) error {
 	// reading IP from file, the first IP is the dispatcher node
 	// the rest are the worker nodes
